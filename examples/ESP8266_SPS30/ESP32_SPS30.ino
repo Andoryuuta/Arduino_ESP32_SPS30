@@ -1,67 +1,82 @@
-/**
- * For example sps30 & esp32
- * Mod by Sonthaya Boonchan @HONEYLab
- * 05/02/2019
- * 
- * Hardware test
- * -> esp32 lite (mcu)
- * -> sps30 (sensor)
- * 
- * Communication uart
- * rx -> 16
- * tx -> 17
- * 
- * Please edit file sensirion_uart.cpp for change pin or port communication
-*/
-
+#include <ESP8266WiFi.h>
+#include <WiFiClient.h>
+#include <ESP8266WebServer.h>
+#include <ESP8266mDNS.h>
+#include <Arduino.h>
 #include "sensirion_uart.h"
 #include "sps30.h"
 
+const char* ssid = "<your wifi ssid>";
+const char* password = "<your wifi password>";
+
+ESP8266WebServer server(80);
+
 void setup() {
-	Serial.begin(115200);
+  WiFi.begin(ssid, password);
+
+  while (WiFi.status() != WL_CONNECTED) {
+    delay(500);
+  }
+
+  bool mdns_inited = false;
+  if(MDNS.begin("esp8266")) {
+    mdns_inited = true;
+  }
+
 	sensirion_uart_open();
+  int probe_result = sps30_probe();
+  int start_measurement_result = sps30_start_measurement();
 
-    while (sps30_probe() != 0) {
-        Serial.println("probe failed");
-        delay(1000);
-    }
-	// sps30_set_fan_auto_cleaning_interval(60*60);
+  server.onNotFound([](){
+    server.send(404, "text/plain", "404 -- Not Found");
+  });
 
-    /* start measurement and wait for 10s to ensure the sensor has a
-     * stable flow and possible remaining particles are cleaned out */
-    if (sps30_start_measurement() != 0) {
-        Serial.println("error starting measurement");
+  server.on("/", [](){
+    server.send(200, "text/plain", "hello world!");
+  });
+
+  server.on("/debug_status", [&](){
+    char buf[50];
+    sprintf(buf, "probe:%d, start_measurement:%d", probe_result, start_measurement_result);
+    server.send(200, "text/plain", buf);
+  });
+
+  server.on("/read_measurement", [](){
+    sps30_measurement measurement;
+    
+    s16 result = sps30_read_measurement(&measurement);
+    while(result != 0){
+      delay(50);
+      result = sps30_read_measurement(&measurement);
     }
+    
+    
+    bool err_state = SPS_IS_ERR_STATE(result);
+    String mc_1p0 = String(measurement.mc_1p0);
+    String mc_2p5 = String(measurement.mc_2p5);
+    String mc_4p0 = String(measurement.mc_4p0);
+    String mc_10p0 = String(measurement.mc_10p0);
+    String nc_0p5 = String(measurement.nc_0p5);
+    String nc_1p0 = String(measurement.nc_1p0);
+    String nc_2p5 = String(measurement.nc_2p5);
+    String nc_4p0 = String(measurement.nc_4p0);
+    String nc_10p0 = String(measurement.nc_10p0);
+    String typical_particle_size = String(measurement.typical_particle_size);
+    
+    
+    char buffer[500];
+    sprintf(buffer, 
+    "{\"err_state\": %d, \"typical_particle_size\": %s, \"mc_1p0\": %s, \"mc_2p5\": %s, \"mc_4p0\": %s, \"mc_10p0\": %s, \"nc_0p5\": %s, \"nc_1p0\": %s, \"nc_2p5\": %s, \"nc_4p0\": %s, \"nc_10p0\": %s}", 
+    err_state, typical_particle_size.c_str(),
+    mc_1p0.c_str(), mc_2p5.c_str(), mc_4p0.c_str(), mc_10p0.c_str(),
+    nc_0p5.c_str(), nc_1p0.c_str(), nc_2p5.c_str(), nc_4p0.c_str(), nc_10p0.c_str());
+    server.send(200, "text/plain", buffer);
+
+  });
+
+  server.begin();
 }
 
 void loop() {
-    struct sps30_measurement measurement;
-    s16 ret;
-
-    while(true) {
-        delay(1000);
-        ret = sps30_read_measurement(&measurement);
-
-        if (ret < 0) {
-          Serial.println("read measurement failed");
-        } else {
-            if (SPS_IS_ERR_STATE(ret)) {
-              Serial.println("Measurements may not be accurate");
-            }else{
-                Serial.print("pm1.0 :");Serial.println(measurement.mc_1p0);
-                Serial.print("pm2.5 :");Serial.println(measurement.mc_2p5);
-                Serial.print("pm4.0 :");Serial.println(measurement.mc_4p0);
-                Serial.print("pm10.0 :");Serial.println(measurement.mc_10p0);
-                Serial.print("nc0.5 :");Serial.println(measurement.nc_0p5);
-                Serial.print("nc1.0 :");Serial.println(measurement.nc_1p0);
-                Serial.print("nc2.5 :");Serial.println(measurement.nc_2p5);
-                Serial.print("nc4.0 :");Serial.println(measurement.nc_4p0);
-                Serial.print("nc10.0 :");Serial.println(measurement.nc_10p0);
-                Serial.print("typical particle size :");Serial.println(measurement.typical_particle_size);
-            }
-        }
-    }
-
-    sps30_stop_measurement();
-    sensirion_uart_close();
+  server.handleClient();
 }

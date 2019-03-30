@@ -7,9 +7,7 @@
 /*************************************************/
 
 #include "HardwareSerial.h"
-HardwareSerial SERIALDEVICE_SPS30(2);
-#define PIN_UART_RX 16
-#define PIN_UART_TX 17
+HardwareSerial SERIALDEVICE_SPS30(0);
 
 /*************************************************/
 
@@ -22,7 +20,7 @@ HardwareSerial SERIALDEVICE_SPS30(2);
 
 
 s16 sensirion_uart_open() {
-    SERIALDEVICE_SPS30.begin(BAUDRATE,SERIAL_8N1,PIN_UART_RX,PIN_UART_TX);
+    SERIALDEVICE_SPS30.begin(BAUDRATE);
     return 0;
 }
 s16 sensirion_uart_close() {
